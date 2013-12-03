@@ -36,7 +36,7 @@ def wait_for_port (addr, port):
 
 def get_webapp_machines(browser):
     wm = { }
-    cockpit = browser.eval_js('return cockpit_dbus_clients.map(function (c) { return c.target });')
+    cockpit = browser.eval_js('return cockpit_machines.map(function (m) { return m.address });')
     for i in range (0, len(cockpit)):
         wm[cockpit[i]] = i;
     return wm
@@ -81,38 +81,62 @@ class TestMultiMachine(MachineCase):
         wait_for_port(m2.address, 22)
         wait_for_port(m3.address, 22)
 
-        self.login_and_go("dashboard")
+        m1.execute ("hostnamectl set-hostname machine-1")
+        m2.execute ("hostnamectl set-hostname machine-2")
+        m3.execute ("hostnamectl set-hostname machine-3")
 
+        self.login_and_go("dashboard")
+        b.wait_in_text('#dashboard-machines', "machine-1")
+
+        # TODO - start a second browser on machine-1 and check that it reflects
+        #        all changes as expected.
+
+        # Add machine-2
         b.click('#dashboard-add-server')
         b.wait_popup('dashboard_add_server_dialog')
         b.set_val('#dashboard_add_server_address', m2.address)
         b.click('#dashboard_add_server_add')
         b.wait_popdown('dashboard_add_server_dialog')
+        b.wait_in_text('#dashboard-machines', "machine-2")
 
+        wm = get_webapp_machines(b)
+        m1_index = wm["localhost"]
+        m2_index = wm[m2.address]
+
+        # Kill the session on machine-2
+        m2.execute("loginctl kill-user admin")
+        b.wait_text(machine_error_selector(m2_index), "Your session has been terminated.")
+
+        # Reconnect to machine-2
+        b.wait_text (action_selector (m2_index), "Connect")
+        b.click (action_selector (m2_index))
+        b.wait_visible (graph_selector (m2_index))
+
+        # Kill the two sessions on machine-1.  This will prevent
+        # machine-3 from being added permanently.
+        m1.execute("loginctl kill-user admin")
+        b.wait_text(machine_error_selector(m1_index), "Your session has been terminated.")
+        b.wait_visible('#dashboard-local-disconnected')
+        b.wait_text('#dashboard-local-error', "Your session has been terminated.")
+
+        # Add machine-3
         b.click('#dashboard-add-server')
         b.wait_popup('dashboard_add_server_dialog')
         b.set_val('#dashboard_add_server_address', m3.address)
         b.click('#dashboard_add_server_add')
         b.wait_popdown('dashboard_add_server_dialog')
 
-        wm = get_webapp_machines(b)
-        m1_index = wm["localhost"]
-        m2_index = wm[m2.address]
-        m3_index = wm[m3.address]
+        b.wait_popup('error-popup')
+        b.click("#error-popup button")
+        b.wait_popdown("error-popup")
 
-        m1.execute("loginctl kill-user admin")
-        b.wait_text(machine_error_selector(m1_index), "Your session has been terminated.")
+        b.wait_in_text('#dashboard-machines', "machine-3")
+        assert m3.address not in m1.execute("grep machines /var/lib/cockpit/machines");
 
-        m2.execute("loginctl kill-user admin")
-        b.wait_text(machine_error_selector(m2_index), "Your session has been terminated.")
-
-        b.wait_text (action_selector (m1_index), "Connect")
-        b.click (action_selector (m1_index))
-        b.wait_visible (graph_selector (m1_index))
-
-        b.wait_text (action_selector (m2_index), "Connect")
-        b.click (action_selector (m2_index))
-        b.wait_visible (graph_selector (m2_index))
+        # Reconnect to localhost.  This will cause machine-3 to be
+        # added permanently.
+        b.click('#dashboard-local-reconnect')
+        b.wait_not_visible('#dashboard-local-disconnected')
 
         self.allow_journal_messages("Warning: Permanently added '.*' \\(RSA\\) to the list of known hosts.",
                                     "peer did not close io when expected")
