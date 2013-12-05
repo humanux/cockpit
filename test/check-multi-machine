@@ -88,10 +88,11 @@ class TestMultiMachine(MachineCase):
         self.login_and_go("dashboard")
         b.wait_in_text('#dashboard-machines', "machine-1")
 
-        # TODO - start a second browser on machine-1 and check that it reflects
-        #        all changes as expected.
+        b2 = self.new_browser()
+        b2.login_and_go("dashboard")
+        b2.wait_in_text('#dashboard-machines', "machine-1")
 
-        # Add machine-2
+        # Add machine-2.
         b.click('#dashboard-add-server')
         b.wait_popup('dashboard_add_server_dialog')
         b.set_val('#dashboard_add_server_address', m2.address)
@@ -99,25 +100,31 @@ class TestMultiMachine(MachineCase):
         b.wait_popdown('dashboard_add_server_dialog')
         b.wait_in_text('#dashboard-machines', "machine-2")
 
+        # It should appear in b2 as well.
+        b2.wait_in_text('#dashboard-machines', "machine-2")
+
         wm = get_webapp_machines(b)
         m1_index = wm["localhost"]
         m2_index = wm[m2.address]
 
-        # Kill the session on machine-2
+        # Kill the sessions on machine-2
         m2.execute("loginctl kill-user admin")
         b.wait_text(machine_error_selector(m2_index), "Your session has been terminated.")
+        b2.wait_text(machine_error_selector(m2_index), "Your session has been terminated.")
 
         # Reconnect to machine-2
         b.wait_text (action_selector (m2_index), "Connect")
         b.click (action_selector (m2_index))
         b.wait_visible (graph_selector (m2_index))
 
-        # Kill the two sessions on machine-1.  This will prevent
-        # machine-3 from being added permanently.
+        # Kill the sessions on machine-1.  This will prevent machine-3
+        # from being added permanently.
         m1.execute("loginctl kill-user admin")
         b.wait_text(machine_error_selector(m1_index), "Your session has been terminated.")
         b.wait_visible('#dashboard-local-disconnected')
         b.wait_text('#dashboard-local-error', "Your session has been terminated.")
+        b2.wait_visible('#dashboard-local-disconnected')
+        b2.wait_text('#dashboard-local-error', "Your session has been terminated.")
 
         # Add machine-3
         b.click('#dashboard-add-server')
@@ -133,10 +140,15 @@ class TestMultiMachine(MachineCase):
         b.wait_in_text('#dashboard-machines', "machine-3")
         assert m3.address not in m1.execute("grep machines /var/lib/cockpit/machines");
 
-        # Reconnect to localhost.  This will cause machine-3 to be
-        # added permanently.
+        # Reconnect both browsers to localhost.  This will cause machine-3 to be
+        # added permanently and appear in the second browser.
         b.click('#dashboard-local-reconnect')
         b.wait_not_visible('#dashboard-local-disconnected')
+        b2.click('#dashboard-local-reconnect')
+        b2.wait_not_visible('#dashboard-local-disconnected')
+        b2.wait_in_text('#dashboard-machines', "machine-3")
+
+        b2.snapshot("B2")
 
         self.allow_journal_messages("Warning: Permanently added '.*' \\(RSA\\) to the list of known hosts.",
                                     "peer did not close io when expected")
