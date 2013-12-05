@@ -144,6 +144,26 @@ function cockpit_go (trail)
 
     cockpit_close_menu ();
 
+    if (trail.length >= 2 && trail[1].page == "server") {
+        // Check whether we are connected to the right machine, and if
+        // not, reload the whole thing.
+
+        var wanted_machine = trail[1].machine;
+        var selected_machine = cockpit_settings_get ("selected-machine");
+        var connected_machine = cockpit_dbus_client.target;
+
+        if (wanted_machine != selected_machine) {
+            cockpit_settings_set ("selected-machine", wanted_machine);
+            cockpit_loc_trail = trail;
+            cockpit_show_hash ();
+            window.location.reload(false);
+            return;
+        }
+
+        if (selected_machine != connected_machine)
+            window.alert("This is not the machine you are looking for.");
+    }
+
     if ($('#' + new_loc.page).length === 0) {
         cockpit_go (trail.slice(0, trail.length-1));
         return;

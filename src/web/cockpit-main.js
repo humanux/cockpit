@@ -200,8 +200,16 @@ function cockpit_update_machines ()
             j += 1;
     }
 
-    if (!cockpit_dbus_client)
+    if (!cockpit_dbus_client) {
+        var selected_machine = cockpit_settings_get ('selected-machine');
+
         cockpit_dbus_client = cockpit_dbus_local_client;
+
+        for (j = 0; j < cockpit_machines.length; j++) {
+            if (cockpit_machines[j].address == selected_machine)
+                cockpit_dbus_client = cockpit_machines[j].client;
+        }
+    }
 
     cockpit_dashboard_update_machines ();
 }
