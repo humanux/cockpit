@@ -120,7 +120,7 @@ class Machine:
             if not os.path.exists(rpm):
                 raise Failure("file does not exist: %s" % rpm)
 
-        self.start(maintain=True)
+        self.start(maintain=True, nat=False)
         try:
             self.wait_boot()
             uploaded = []
@@ -488,7 +488,7 @@ class QemuMachine(Machine):
         # Assume it's in $PATH
         return 'qemu-kvm'
 
-    def _start_qemu(self, maintain=False, tty=False, monitor=None):
+    def _start_qemu(self, maintain=False, tty=False, monitor=None, nat=False):
         if (not os.path.exists(self._image_root)
             or not os.path.exists(self._image_kernel)
             or not os.path.exists(self._image_initrd)):
@@ -523,6 +523,7 @@ class QemuMachine(Machine):
             conf = { }
 
         snapshot = maintain and "off" or "on"
+        bridge = nat and "cockpitnat0" or "cockpit0"
         selinux = "enforcing=0"
         self.macaddr = self._choose_macaddr(conf)
         cmd = [
@@ -534,7 +535,7 @@ class QemuMachine(Machine):
             "-append", "root=/dev/vda console=ttyS0 quiet %s" % (selinux, ),
             "-nographic",
             "-net", "nic,model=virtio,macaddr=%s" % self.macaddr,
-            "-net", "bridge,vlan=0,br=cockpit0",
+            "-net", "bridge,vlan=0,br=%s" % bridge,
             "-device", "virtio-scsi-pci,id=hot"
         ]
 
@@ -582,13 +583,13 @@ class QemuMachine(Machine):
     # This is a special QEMU specific maintenance console
     def qemu_console(self, snapshot=False):
         try:
-            proc = self._start_qemu(maintain=not snapshot, tty=True)
+            proc = self._start_qemu(maintain=not snapshot, tty=True, nat=not snapshot)
         except:
             self._cleanup()
             raise
         proc.wait()
 
-    def start(self, maintain=False):
+    def start(self, maintain=False, nat=False):
         assert not self._process
         try:
             if not os.path.exists(self.run_dir):
@@ -596,7 +597,8 @@ class QemuMachine(Machine):
 
             (unused, self._monitor) = tempfile.mkstemp(suffix='.mon', prefix="machine-", dir=self.run_dir)
             self._process = self._start_qemu(maintain=maintain, tty=False,
-                                             monitor="unix:path=%s,server,nowait" % self._monitor)
+                                             monitor="unix:path=%s,server,nowait" % self._monitor,
+                                             nat=nat)
             self._maintaining = maintain
         except:
             self._cleanup()
